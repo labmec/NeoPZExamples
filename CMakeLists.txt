@@ -9,4 +9,5 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Finding the pz package
 find_package(NeoPZ REQUIRED)
 add_subdirectory(SpecialMaps)
+add_subdirectory(F17DirectionalRefinement)
 
