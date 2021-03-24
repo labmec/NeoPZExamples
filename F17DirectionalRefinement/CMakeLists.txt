@@ -6,3 +6,6 @@ add_pz_target(
   yf17.xyz
   yf17.tri
   yf17.tet)
+#in this directory there are also the original mesh files
+#zipped in a file. the script truncateMesh.py could be used
+#for creating a smaller bounding box
