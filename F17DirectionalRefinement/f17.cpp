@@ -73,7 +73,7 @@ int main()
         std::cout<<"\tRefined!"<<'\n';
         std::cout <<"\tTotal time: ";
         std::cout<<std::chrono::duration_cast<std::chrono::milliseconds>(reftimer_e-reftimer_b).count();
-        std::cout<<std::endl;
+        std::cout<<"ms"<<std::endl;
         //we want to differentiate which elements are refined in which round
         destMatId += 1;
         std::ofstream out(meshFileName+std::to_string(i+1)+".vtk");
