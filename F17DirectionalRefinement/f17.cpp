@@ -86,8 +86,7 @@ int main()
 TPZGeoMesh * CreateF17Mesh()
 {
     TPZGeoMesh *gmesh = new TPZGeoMesh();
-    std::string path = PZSOURCEDIR;
-    path += "/Projects/F17DirectionalRefinement/Files/";
+    std::string path = "";
 
     std::cout << "===============================================================\n"
               << "Reading F17 mesh\n";
