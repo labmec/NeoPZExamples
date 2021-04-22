@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
   constexpr int nThreads{4};
   //defines storage scheme to be used for the FEM matrices
   //in this case, a symmetric skyline matrix is used
-  TPZSkylineStructMatrix matskl(cmesh);
+  TPZSkylineStructMatrix<STATE> matskl(cmesh);
   matskl.SetNumThreads(nThreads);
   an.SetStructuralMatrix(matskl);
   	
