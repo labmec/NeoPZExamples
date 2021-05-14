@@ -7,8 +7,8 @@
 #include <TPZGeoMeshTools.h> //for TPZGeoMeshTools::CreateGeoMeshOnGrid
 #include <MMeshType.h> //for MMeshType
 #include <pzmanvector.h>//for TPZManVector
-#include <TPZMatLaplacian.h> //for TPZMatLaplacian
-#include <pzbndcond.h> //for TPZBndCond
+#include <Poisson/TPZMatPoisson.h> //for TPZMatPoisson
+#include <TPZBndCond.h> //for TPZBndCond
 #include <pzanalysis.h> //for TPZAnalysis
 #include <TPZSSpStructMatrix.h> //symmetric sparse matrix storage
 #include <pzskylstrmatrix.h> //symmetric skyline matrix storage
@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
    * the log should be initialised as:
    TPZLogger::InitializePZLog();*/
   
-  /* We will solve div(grad(u)) = 2y^2+2x^2-4
+  /* We will solve -div(grad(u)) = -(2y^2+2x^2-4)
    * in the domain Omega=[-1,1]x[-1,1] embedded in a 3D space
    * with homogeneous boundary conditions u=0 on dOmega*/
   constexpr int solOrder{4};
@@ -41,7 +41,6 @@ int main(int argc, char *argv[])
         const REAL &x = loc[0];
         const REAL &y = loc[1];
         u[0] = 2*y*y+2*x*x-4;
-        //see comment on TPZMatLaplacian
         u[0] *= -1;
   };
   
@@ -88,9 +87,8 @@ int main(int argc, char *argv[])
    * material ids used when creating the geometric mesh. In this way, you could
    * have different materials on different mesh regions */
 
-  TPZMatLaplacian *mat = new TPZMatLaplacian(matIdVec[0],dim);
+  auto *mat = new TPZMatPoisson<STATE>(matIdVec[0],dim);
   //TPZMatLaplacian solves div(k grad(u)) = -f
-  mat->SetPermeability(1);
   mat->SetForcingFunction(rhs,rhsPOrder);
   cmesh->InsertMaterialObject(mat);
 
@@ -102,7 +100,8 @@ int main(int argc, char *argv[])
        * conditions. val1 goes in the matrix and val2 in the rhs.
        * for dirichlet boundary conditions, only the value of 
        * val2 is used.*/
-      TPZFMatrix<STATE> val1(1,1,0.), val2(1,1,0.);
+      TPZFMatrix<STATE> val1(1,1,0.);
+      TPZManVector<STATE,1> val2={0};
       //dirichlet=0,neumann=1,robin=2
       constexpr int boundType{0};
       //TPZBndCond is a material type for boundary conditions
