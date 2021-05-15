@@ -13,7 +13,7 @@
 #include <TPZSSpStructMatrix.h> //symmetric sparse matrix storage
 #include <pzskylstrmatrix.h> //symmetric skyline matrix storage
 #include <pzstepsolver.h> //for TPZStepSolver
-//#include <pzlog.h> //for TPZLogger
+#include <TPZSimpleTimer.h>
 
 
 int main(int argc, char *argv[])
@@ -130,12 +130,19 @@ int main(int argc, char *argv[])
   TPZStepSolver<STATE> step;
   step.SetDirect(ELDLt);
   an.SetSolver(step);
-
-  //assembles the system
-  an.Assemble();
-	
-  ///solves the system
-  an.Solve();
+  {
+    TPZSimpleTimer total("Total");
+    {
+      TPZSimpleTimer assemble("Assemble");
+      //assembles the system
+      an.Assemble();
+    }
+    {
+      TPZSimpleTimer solve("Solve");
+      ///solves the system
+      an.Solve();
+    }
+  }
   //let us set the exact solution and suggest an integration rule
   //for calculating the error
   an.SetExact(exactSol,solOrder);
