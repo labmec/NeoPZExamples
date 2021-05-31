@@ -36,7 +36,7 @@ CreateCMesh(TPZAutoPointer<TPZGeoMesh> gmesh, int pOrder,
             const STATE lambda, const REAL &scale, bool usingSymmetry, ESymType sym);
 
 void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
-                             TPZVec<long> &activeEquations, int &neq,
+                             TPZVec<int64_t> &activeEquations, int &neq,
                              int &neqOriginal);
 
 int main(int argc, char *argv[]) {
@@ -343,13 +343,13 @@ CreateCMesh(TPZAutoPointer<TPZGeoMesh> gmesh, int pOrder,
 }
 
 void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
-                             TPZVec<long> &activeEquations, int &neq,
+                             TPZVec<int64_t> &activeEquations, int &neq,
                              int &neqOriginal)
 {
   TPZSimpleTimer timer ("Filter dirichlet eqs");
   auto cmesh = meshVec[0];
-  TPZManVector<long, 1000> allConnects;
-  std::set<long> boundConnects;
+  TPZManVector<int64_t, 1000> allConnects;
+  std::set<int64_t> boundConnects;
 
   for (int iel = 0; iel < cmesh->NElements(); iel++) {
     TPZCompEl *cel = cmesh->ElementVec()[iel];
@@ -360,16 +360,14 @@ void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
       continue;
     }
     TPZBndCond *mat = dynamic_cast<TPZBndCond *>(
-        meshVec[0]->MaterialVec()[cel->Reference()->MaterialId()]);
+        cmesh->MaterialVec()[cel->Reference()->MaterialId()]);
     if (mat && mat->Type() == 0) {//check for dirichlet bcs
-      std::set<long> boundConnectsEl;
-      std::set<long> depBoundConnectsEl;
-      std::set<long> indepBoundConnectsEl;
+      std::set<int64_t> boundConnectsEl;
+      std::set<int64_t> depBoundConnectsEl;
+      std::set<int64_t> indepBoundConnectsEl;
       cel->BuildConnectList(indepBoundConnectsEl, depBoundConnectsEl);
       cel->BuildConnectList(boundConnectsEl);
-      for (std::set<long>::iterator iT = boundConnectsEl.begin();
-           iT != boundConnectsEl.end(); iT++) {
-        const long val = *iT;
+      for(auto val : boundConnectsEl){
         if (boundConnects.find(val) == boundConnects.end()) {
           boundConnects.insert(val);
         }
@@ -381,15 +379,15 @@ void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
       TPZConnect &con = cmesh->ConnectVec()[iCon];
       if (con.HasDependency())
         continue;
-      int seqnum = con.SequenceNumber();
-      int pos = cmesh->Block().Position(seqnum);
-      int blocksize = cmesh->Block().Size(seqnum);
+      const auto seqnum = con.SequenceNumber();
+      const auto pos = cmesh->Block().Position(seqnum);
+      const auto blocksize = cmesh->Block().Size(seqnum);
       if (blocksize == 0)
         continue;
 
-      int vs = activeEquations.size();
+      const auto vs = activeEquations.size();
       activeEquations.Resize(vs + blocksize);
-      for (int ieq = 0; ieq < blocksize; ieq++) {
+      for (auto ieq = 0; ieq < blocksize; ieq++) {
         activeEquations[vs + ieq] = pos + ieq;
       }
     }
