@@ -16,7 +16,13 @@ This sample project is used for demonstrating some of the unusual special geomet
 
  This project used a F17 aircraft as a model to demonstrate the capabilities of automatic directional refinement in NeoPZ. These capabilities might be useful, for instance, in the case of boundary layer analysis, hence the chosen example. The program first builds a mesh modelling the *outside* of the aircraft, and the aircraft is part of the boundary of the created mesh. Then, through sucessive iterations, it models the boundary layer of the jet. It relies on graphical output.
  
+### ModalAnalysisWG
+
+This project illustrates how to use NeoPZ to perform  modal analysis of electromagnetic Waveguides. It is suitable (as is)for rectangular homogeneous waveguides surrounded with perfect metallic conductors.  It uses as an example a WR90 rectangular waveguide.
+
+It is also an interesting example on how to deal with multiphysics meshes and Krylov eigensolvers with spectral transformations.
+
 ## Tutorials 
 ### Poisson2D
- 
- Solve the Poisson equation in a bidimensional domain and performs error analysis.
+
+Solve the Poisson equation in a bidimensional domain and performs error analysis.
