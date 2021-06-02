@@ -26,3 +26,7 @@ It is also an interesting example on how to deal with multiphysics meshes and Kr
 ### Poisson2D
 
 Solve the Poisson equation in a bidimensional domain and performs error analysis.
+
+### HCurlProjection
+
+Projects a given analytic solution on a HCurl-conforming approximation space and performs error analysis.

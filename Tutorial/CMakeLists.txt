@@ -1,6 +1,7 @@
 set(tutorial_sources "")
 
 add_subdirectory(Poisson2D)
+add_subdirectory(Projections)
 
 
 #enable folder structure for the tutorials (needed in some IDEs)
