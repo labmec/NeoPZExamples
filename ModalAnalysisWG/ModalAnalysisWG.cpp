@@ -1,10 +1,22 @@
+/**
+ModalAnalysisWG.cpp
+
+This target demonstrate how to use NeoPZ for the modal analysis of a metal-backed
+electromagnetic waveguide. For this example, the WR90 waveguide is used.
+
+A HCurl-conforming approximation space is used for the transverse field components and
+a H1-conforming approximation space for the axial component.
+***/
+
+
 #include <Electromagnetics/TPZWaveguideModalAnalysis.h> //for TPZMatWaveguideModalAnalysis
 #include <MMeshType.h>                                  //for MMeshType
 #include <TPZBndCond.h>                                 //for TPZBndCond
 #include <TPZEigenAnalysis.h>                           //for TPZLinearAnalysis
 #include <TPZGeoMeshTools.h>      //for TPZGeoMeshTools::CreateGeoMeshOnGrid
 #include <TPZKrylovEigenSolver.h> //for TPZKrylovEigenSolver
-#include <TPZSpectralTransform.h> //for TPZSTShiftInvert
+#include <TPZLapackEigenSolver.h> //for TPZLapackEigenSolver
+#include <TPZSpectralTransform.h> //for TPZSTShiftAndInvert
 #include <TPZNullMaterial.h>      //for TPZNullMaterial
 #include <TPZElectromagneticConstants.h>
 #include <TPZSimpleTimer.h>
@@ -16,6 +28,8 @@
 #include "TPZVTKGeoMesh.h" //for exporting geomesh to vtk
 #include <pzbuildmultiphysicsmesh.h>
 #include <pzlog.h>
+
+
 //! BC to be used if splitting domain in half (width-wise)
 enum class ESymType { NONE, PMC, PEC };
 
@@ -30,14 +44,30 @@ CreateGMeshRectangularWaveguide(TPZVec<int> &matIdVec, const REAL &scale,
                                 const MMeshType meshType,
                                 const bool usingSymmetry);
 
+/**
+   @brief Creates the computational meshes used for approximating the waveguide EVP.
+   Three meshes will be created: one for the H1 approximation space, one for the
+   HCurl approximation space and one multiphysics mesh combining both spaces.
+   @note The material ids should be the same given to CreateGMeshRectangularWaveguide.
+*/
 TPZVec<TPZAutoPointer<TPZCompMesh>>
 CreateCMesh(TPZAutoPointer<TPZGeoMesh> gmesh, int pOrder,
             const TPZVec<int> &matIdVec, const CSTATE ur, const CSTATE er,
             const STATE lambda, const REAL &scale, bool usingSymmetry, ESymType sym);
 
+
+/** @brief Counts active equations per approximation space*/
+void CountActiveEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
+                          const std::set<int64_t> &boundConnects,
+                          int &neq,
+                          int &nH1Equations, int &nHCurlEquations);
+
+/** @brief Gets the indices of the equations associated with dirichlet homogeneous BCs
+ so they can be filtered out of the global system*/
 void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
                              TPZVec<int64_t> &activeEquations, int &neq,
-                             int &neqOriginal);
+                             int &neqOriginal, int& nh1, int &nhcurl);
+
 
 int main(int argc, char *argv[]) {
 #ifdef PZ_LOG
@@ -45,6 +75,11 @@ int main(int argc, char *argv[]) {
    * the log should be initialised as:*/
   TPZLogger::InitializePZLOG();
 #endif
+
+  /***********************
+   * setting the problem *
+   ***********************/
+  
   // width of the waveguide
   constexpr REAL wDomain{0.02286};
   // height of the waveguide
@@ -54,16 +89,16 @@ int main(int argc, char *argv[]) {
   //which BC to apply if symmetry is used
   constexpr ESymType sym{ESymType::PEC};
   // n divisions in x direction
-  constexpr int nDivX{40};
+  constexpr int nDivX{32};
   // n divisions in y direction
-  constexpr int nDivY{20};
+  constexpr int nDivY{16};
   // type of elements
   constexpr MMeshType meshType{MMeshType::ETriangular};
   // TPZManVector<Type,N> is a vector container with static + dynamic storage.
   // one can also use TPZVec<Type> for dynamic storage
   TPZManVector<int, 2> nDivs = {nDivX, nDivY};
   // polynomial order to be used in the approximation
-  constexpr int pOrder{2};
+  constexpr int pOrder{1};
   // magnetic permeability
   constexpr CSTATE ur{1};
   // electric permittivity
@@ -74,41 +109,88 @@ int main(int argc, char *argv[]) {
   constexpr STATE lambda{pzeletromag::cZero/freq};
   /*Given the small dimensions of the domain, scaling it can help in 
     achieving good precision. Uing k0 as a scale factor results in 
-    the eigenvalues propagationConstant/k0 = effectiveIndex*/
+    the eigenvalues -(propagationConstant/k0)^2 = -effectiveIndex^2*/
   constexpr REAL scale{2*M_PI/lambda};
+
+
+  /******************
+   * solver options *
+   ******************/
+  
   //number of threads to use
   constexpr int nThreads{4};
   //number of genvalues to be computed
   constexpr int nEigenpairs{10};
-  //whether to compute eigenvectors
+  //whether to compute eigenvectors (instead of just eigenvalues)
   constexpr bool computeVectors{true};
+  //how to sort the computed eigenvalues
+  constexpr TPZEigenSort sortingRule {TPZEigenSort::TargetRealPart};
   /*
    The simulation uses a Krylov-based Arnoldi solver for solving the
    generalised EVP. A shift-and-inverse spectral transform is applied in 
    the system for better convergence of the eigenvalues.
    The target variable should be close to the desired eigenvalue (in this case,
-   the effective index neff)*/
-  constexpr CSTATE target = -0.93120625;
+   the effective index neff). We are looking for neff=1, i.e., the modes with
+  lowest cutoff frequency*/
+  constexpr CSTATE target = -1;
   // Dimension of the krylov space to be used. Suggested to be at least nev * 10
   constexpr int krylovDim{200};
+
+
+  /*********************
+   * exporting options *
+   *********************/
+
+  //whether to print the geometric mesh in .txt and .vtk formats
+  constexpr bool printGMesh{false};
+  //whether to export the solution as a .vtk file
+  constexpr bool exportVtk{true};
+  //resolution of the .vtk file in which the solution will be exported
+  constexpr int vtkRes{1};
+  //if true, the real part of the electric fields is exported. otherwise, the magnitude
+  constexpr bool printRealPart{true};
+
+  /********************
+   * advanced options *
+   ********************/
   
+  //reorder the equations in order to optimize bandwidth
+  constexpr bool optimizeBandwidth{true};
+  /*
+    The equations corresponding to homogeneous dirichlet boundary condition(PEC)
+    can be filtered out of the global system in order to achieve better conditioning.
+   */
+  constexpr bool filterBoundaryEqs{true};
+
+  /*********
+   * begin *
+   *********/
+
+  
+  //scoped-timer 
+  TPZSimpleTimer total("Total");
+
   /* Vector for storing materials(regions) identifiers for the 
      TPZGeoMeshTools::CreateGeoMeshOnGrid function.
      In this example, we have one material for the interior of the waveguide
      and one for each BC*/
   TPZManVector<int, 5> matIdVec({1,-1,-2,-3,-4});
-
-  TPZSimpleTimer total("Total");
   //creates geometric mesh
   auto gmesh = CreateGMeshRectangularWaveguide(matIdVec,scale,wDomain,hDomain,nDivs,
                                                meshType,usingSymmetry);
 
-  const std::string gmeshFileName{"gmesh_" +
-    std::to_string(nDivX) + " _" + std::to_string(nDivY) + ".vtk"};
+  
   //print gmesh to vtk
+  if(printGMesh)
   {
-    std::ofstream gmeshFile(gmeshFileName);
-    TPZVTKGeoMesh::PrintGMeshVTK(gmesh, gmeshFile, true);
+    const std::string gmeshFileNameTxt{"gmesh_" +
+    std::to_string(nDivX) + " _" + std::to_string(nDivY) + ".vtk"};
+    std::ofstream gmeshFileTxt(gmeshFileNameTxt);
+    gmesh->Print(gmeshFileTxt);
+    const std::string gmeshFileNameVtk{"gmesh_" +
+    std::to_string(nDivX) + " _" + std::to_string(nDivY) + ".vtk"};
+    std::ofstream gmeshFileVtk(gmeshFileNameVtk);
+    TPZVTKGeoMesh::PrintGMeshVTK(gmesh, gmeshFileVtk, true);
   }
 
   /*
@@ -117,11 +199,10 @@ int main(int argc, char *argv[]) {
   computational meshes are generated. One for each space and a multiphysics mesh*/
   auto meshVec = CreateCMesh(gmesh,pOrder,matIdVec,ur,er,lambda,
                              scale,usingSymmetry,sym);
-  //geths the multiphysics mesh (main mesh)
+  //gets the multiphysics mesh (main mesh)
   auto cmesh = meshVec[0];
 
-  //reorder the equations in order to optimize bandwidth
-  constexpr bool optimizeBandwidth{true};
+  
   TPZEigenAnalysis an(cmesh, optimizeBandwidth);
   an.SetComputeEigenvectors(computeVectors);
 
@@ -137,41 +218,67 @@ int main(int argc, char *argv[]) {
 #endif
   
   strmtrx->SetNumThreads(nThreads);
-  /*
-    The equations corresponding to homogeneous dirichlet boundary condition(PEC)
-    can be filtered out of the global system
-   */
+  
   TPZVec<int64_t> activeEquations;
   //this value is the total number of dofs including dirichlet bcs
-  int neqOriginal;
-  {
-    int neq;
-    FilterBoundaryEquations(meshVec, activeEquations, neq, neqOriginal);
+  int neq, neqOriginal, neqH1, neqHCurl;
+  
+  
+  if(filterBoundaryEqs){
+    FilterBoundaryEquations(meshVec, activeEquations, neq, neqOriginal, neqH1, neqHCurl);
+    std::cout<<"neq(before): "<<neqOriginal
+             <<"\tneq(after): "<<neq<<std::endl;
+    strmtrx->EquationFilter().SetActiveEquations(activeEquations);
+  }else{
+    std::set<int64_t> boundConnects;
+    CountActiveEquations(meshVec,boundConnects,neqOriginal,neqH1,neqHCurl);
   }
-  strmtrx->EquationFilter().SetActiveEquations(activeEquations);
+  
   an.SetStructuralMatrix(strmtrx);
 
-  TPZSTShiftAndInvert<CSTATE> st;
-  st.SetShift(target);
+  
+  
   TPZKrylovEigenSolver<CSTATE> solver;
+  TPZSTShiftAndInvert<CSTATE> st;
   solver.SetSpectralTransform(st);
   solver.SetKrylovDim(krylovDim);
+
+  {
+    /**this is to ensure that the eigenvector subspace is orthogonal to
+       the spurious solutions associated with et = 0 ez != 0*/
+    TPZFMatrix<CSTATE> initVec(neq, 1, 0.);
+    constexpr auto firstHCurl = TPZWaveguideModalAnalysis::HCurlIndex();
+    for (int i = 0; i < neqHCurl; i++) {
+      initVec(firstHCurl + i, 0) = 1;
+    }
+    solver.SetKrylovInitialVector(initVec);
+  }
+
+  solver.SetTarget(target);
   solver.SetNEigenpairs(nEigenpairs);
   solver.SetAsGeneralised(true);
-  
+  solver.SetEigenSorting(sortingRule);
+
   an.SetSolver(solver);
   {
+    std::cout<<"Assembling..."<<std::flush;
     TPZSimpleTimer assemble("Assemble");
     an.Assemble();
+    std::cout<<"\rAssembled!"<<std::endl;
   }
-  an.Solve();
+  {
+    TPZSimpleTimer solv("Solve");
+    std::cout<<"Solving..."<<std::flush;
+    an.Solve();
+    std::cout<<"\rSolved!"<<std::endl;
+  }
   auto ev = an.GetEigenvalues();
 
   for(auto &w : ev){
     std::cout<<w<<std::endl;
   }
   
-  if (!computeVectors) return 0;
+  if (!computeVectors && !exportVtk) return 0;
   
   TPZStack<std::string> scalnames, vecnames;
   scalnames.Push("Ez");
@@ -188,19 +295,29 @@ int main(int argc, char *argv[]) {
   TPZManVector<TPZAutoPointer<TPZCompMesh>,2> meshVecPost(2);
   meshVecPost[0] = meshVec[1];
   meshVecPost[1] = meshVec[2];
-  constexpr int vtkRes{1};
+  
   std::cout<<"Post processing..."<<std::endl;
+  
   for (int iSol = 0; iSol < ev.size(); iSol++) {
-    const CSTATE currentKz = std::sqrt(-1. * ev[iSol]);
+    const CSTATE currentKz = [&ev,iSol](){
+      auto tmp = std::sqrt(-1.0*ev[iSol]);
+      constexpr auto epsilon = std::numeric_limits<STATE>::epsilon()/
+      (10*std::numeric_limits<STATE>::digits10);
+      //let us discard extremely small imag parts
+      if (tmp.imag() < epsilon)
+        {tmp = tmp.real();}
+      return tmp;
+    }();
     eigenvectors.GetSub(0, iSol, neqOriginal, 1, evector);
     for(auto id : matIdVec){
       auto matPtr =
         dynamic_cast<TPZWaveguideModalAnalysis *>(cmesh->FindMaterial(id));
       if(!matPtr) continue;
       matPtr->SetKz(currentKz);
-      matPtr->SetPrintFieldRealPart(true);
+      matPtr->SetPrintFieldRealPart(printRealPart);
     }
-    std::cout<<"\rPost processing step "<<iSol<<" out of "<<ev.size()<<std::flush;
+    std::cout<<"\rPost processing step "<<iSol+1<<" out of "<<ev.size()
+             <<"(kz = "<<currentKz<<")"<<std::flush;
     an.LoadSolution(evector);
     TPZBuildMultiphysicsMesh::TransferFromMultiPhysics(meshVecPost, cmesh);
     an.PostProcess(vtkRes);
@@ -210,12 +327,17 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
+
+
+
+
+
 TPZAutoPointer<TPZGeoMesh> CreateGMeshRectangularWaveguide(
     TPZVec<int> &matIdVec, const REAL &scale, const REAL wDomain,
     const REAL hDomain, TPZVec<int> &nDivs, const MMeshType meshType,
     const bool usingSymmetry)
 {
-  TPZSimpleTimer timer("create gmesh");
+  TPZSimpleTimer timer("Create gmesh");
   // dimension of the problem
   constexpr int dim{2};
   // lower left corner of the domain
@@ -259,7 +381,7 @@ CreateCMesh(TPZAutoPointer<TPZGeoMesh> gmesh, int pOrder,
   cmeshH1->InsertMaterialObject(dummyMat);
 
   
-  TPZFNMatrix<1, CSTATE> val1(1, 1, 0.);
+  TPZFNMatrix<1, CSTATE> val1(1, 1, 1);
   TPZManVector<CSTATE,1> val2(1, 0.);
   const int nMats = matIdVec.size();
   TPZBndCond *dummyBC = nullptr;
@@ -342,9 +464,48 @@ CreateCMesh(TPZAutoPointer<TPZGeoMesh> gmesh, int pOrder,
   return meshVec;
 }
 
+void CountActiveEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
+                          const std::set<int64_t> &boundConnects,
+                          int &neq,
+                          int &nH1Equations, int &nHCurlEquations)
+{
+  auto cmesh = meshVec[0];
+  neq = nH1Equations = nHCurlEquations = 0;
+  auto cmeshHCurl = meshVec[1];
+  auto cmeshH1 = meshVec[2];
+  
+  for (int iCon = 0; iCon < cmesh->NConnects(); iCon++) {
+    bool isH1;
+    if (boundConnects.find(iCon) == boundConnects.end()) {
+      if (cmesh->ConnectVec()[iCon].HasDependency())
+        continue;
+      int seqnum = cmesh->ConnectVec()[iCon].SequenceNumber();
+      int blocksize = cmesh->Block().Size(seqnum);
+      if (TPZWaveguideModalAnalysis::H1Index() == 0 && iCon < cmeshH1->NConnects()) {
+        isH1 = true;
+      } else if (TPZWaveguideModalAnalysis::H1Index() == 1 && iCon >= cmeshHCurl->NConnects()) {
+        isH1 = true;
+      } else {
+        isH1 = false;
+      }
+      for (int ieq = 0; ieq < blocksize; ieq++) {
+        neq++;
+        isH1 == true ? nH1Equations++ : nHCurlEquations++;
+      }
+    }
+  }
+  std::cout << "------\tactive eqs\t-------" << std::endl;
+  std::cout << "# H1 equations: " << nH1Equations << std::endl;
+  std::cout << "# HCurl equations: " << nHCurlEquations << std::endl;
+  std::cout << "# equations: " << neq << std::endl;
+  std::cout << "------\t----------\t-------" << std::endl;
+  return;
+}
+
 void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
                              TPZVec<int64_t> &activeEquations, int &neq,
-                             int &neqOriginal)
+                             int &neqOriginal,
+                             int &nh1, int &nhcurl)
 {
   TPZSimpleTimer timer ("Filter dirichlet eqs");
   auto cmesh = meshVec[0];
@@ -394,34 +555,6 @@ void FilterBoundaryEquations(TPZVec<TPZAutoPointer<TPZCompMesh>> meshVec,
   }
 
   neqOriginal = cmesh->NEquations();
-  neq = 0;
-  auto cmeshHCurl = meshVec[1];
-  auto cmeshH1 = meshVec[2];
-  int nHCurlEquations = 0, nH1Equations = 0;
-  for (int iCon = 0; iCon < cmesh->NConnects(); iCon++) {
-    bool isH1;
-    if (boundConnects.find(iCon) == boundConnects.end()) {
-      if (cmesh->ConnectVec()[iCon].HasDependency())
-        continue;
-      int seqnum = cmesh->ConnectVec()[iCon].SequenceNumber();
-      int blocksize = cmesh->Block().Size(seqnum);
-      if (TPZWaveguideModalAnalysis::H1Index() == 0 && iCon < cmeshH1->NConnects()) {
-        isH1 = true;
-      } else if (TPZWaveguideModalAnalysis::H1Index() == 1 && iCon >= cmeshHCurl->NConnects()) {
-        isH1 = true;
-      } else {
-        isH1 = false;
-      }
-      for (int ieq = 0; ieq < blocksize; ieq++) {
-        neq++;
-        isH1 == true ? nH1Equations++ : nHCurlEquations++;
-      }
-    }
-  }
-  std::cout << "------\tactive eqs\t-------" << std::endl;
-  std::cout << "# H1 equations: " << nH1Equations << std::endl;
-  std::cout << "# HCurl equations: " << nHCurlEquations << std::endl;
-  std::cout << "# equations: " << neq << std::endl;
-  std::cout << "------\t----------\t-------" << std::endl;
-  return;
+  CountActiveEquations(meshVec, boundConnects, neq, nh1, nhcurl);
 }
+
