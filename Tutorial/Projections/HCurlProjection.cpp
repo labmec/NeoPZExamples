@@ -1,6 +1,6 @@
 /**
-    \file poisson.cpp
-    How to solve the poisson equation in a bidimensional domain using NeoPZ
+    \file HCurlProjection.cpp
+    How to project an analytic solution in a HCurl-conforming approximation space.
 */
 #include <pzgmesh.h> //for TPZGeoMesh
 #include <pzcmesh.h> //for TPZCompMesh
@@ -25,21 +25,18 @@ int main(int argc, char *argv[])
 #endif
   /* We will project an analytic solution on a HCurl approximation space
    * in the domain Omega=[-1,1]x[-1,1] embedded in a 3D space*/
-
-  /* Suggested integration rule. since it is negative,
-   * it will use the same order as the element*/
-  constexpr int solOrder{-1};
+  constexpr int solOrder{2};
   auto exactSol = [](const TPZVec<REAL> &loc,
                      TPZVec<STATE> &u,
                      TPZFMatrix<STATE> &curlU) {
     const auto &x = loc[0];
     const auto &y = loc[1];
-    // u[0] = sin(M_PI * y);
-    // u[1] = sin(M_PI * x);
-    // curlU(0, 0) = M_PI * cos(M_PI * x) - M_PI * cos(M_PI * y);
-    u[0] = (y - 1) * (y + 1);
-    u[1] = (x - 1) * (x + 1);
-    curlU(0, 0) = 2 * x - 2 * y;
+    u[0] = sin(M_PI * y);
+    u[1] = sin(M_PI * x);
+    curlU(0, 0) = M_PI * cos(M_PI * x) - M_PI * cos(M_PI * y);
+    // u[0] = (y - 1) * (y + 1);
+    // u[1] = (x - 1) * (x + 1);
+    // curlU(0, 0) = 2 * x - 2 * y;
   };
   //for the rhs, the exact sol should be sol + curl of sol
   const auto rhs = [exactSol](const TPZVec<REAL>&loc, TPZVec<STATE> &u){
@@ -179,7 +176,7 @@ int main(int argc, char *argv[])
   an.DefineGraphMesh(2,scalarVars,vectorVars,"hcurlProjection.vtk");
   constexpr int resolution{1};
 
-  std::cout << "Post procesing..."<<std::endl;
+  std::cout << "Post processing..."<<std::endl;
   TPZSimpleTimer post("Post-processing");
   
   an.PostProcess(resolution);	
