@@ -11,5 +11,7 @@ find_package(NeoPZ REQUIRED)
 add_subdirectory(Tutorial)
 add_subdirectory(SpecialMaps)
 add_subdirectory(F17DirectionalRefinement)
-add_subdirectory(ModalAnalysisWG)
 
+if(PZ_USING_LAPACK)
+    add_subdirectory(ModalAnalysisWG)
+endif()

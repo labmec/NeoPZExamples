@@ -20,7 +20,7 @@ This sample project is used for demonstrating some of the unusual special geomet
 
 This project illustrates how to use NeoPZ to perform  modal analysis of electromagnetic Waveguides. It is suitable (as is)for rectangular homogeneous waveguides surrounded with perfect metallic conductors.  It uses as an example a WR90 rectangular waveguide.
 
-It is also an interesting example on how to deal with multiphysics meshes and Krylov eigensolvers with spectral transformations.
+It is also an interesting example on how to deal with multiphysics meshes and Krylov eigensolvers with spectral transformations. *This target depends on NeoPZ being linked against LAPACK*.
 
 ## Tutorials 
 ### Poisson2D
