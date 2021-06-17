@@ -14,6 +14,7 @@ add_subdirectory(Tutorial)
 add_subdirectory(SpecialMaps)
 add_subdirectory(F17DirectionalRefinement)
 
-if(PZ_USING_LAPACK)
+check_pz_opt(PZ_USING_LAPACK _PZ_HAS_LAPACK)
+if(_PZ_HAS_LAPACK)
     add_subdirectory(ModalAnalysisWG)
 endif()
