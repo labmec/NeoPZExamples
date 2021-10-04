@@ -16,6 +16,20 @@
 #include <TPZSimpleTimer.h>
 #include <pzlog.h>
 
+#include "TPZShapeHCurl.h"
+#include "pzshapetetra.h"
+#include "pzshapetriang.h"
+#include "TPZShapeData.h"
+#include "pzquad.h"
+
+
+template<class TSHAPE>
+void FindHCurlDependency(int order);
+
+typedef std::pair<MElementType,int> orderpair;
+std::map<orderpair ,std::set<int>> ShapeRemove;
+
+
 int main(int argc, char *argv[])
 {
   /**if the NeoPZ library was configured with log4cxx,
@@ -23,6 +37,12 @@ int main(int argc, char *argv[])
 #ifdef PZ_LOG
    TPZLogger::InitializePZLOG();
 #endif
+    ShapeRemove[orderpair(ETriangle,2)] = {0};
+    ShapeRemove[orderpair(ETriangle,3)] = {0,1,7};
+    ShapeRemove[orderpair(ETetraedro,3)] ={0};
+//    FindHCurlDependency<pzshape::TPZShapeTriang>(3);
+    FindHCurlDependency<pzshape::TPZShapeTetra>(3);
+    return 0;
   /* We will project an analytic solution on a HCurl approximation space
    * in the domain Omega=[-1,1]x[-1,1] embedded in a 3D space*/
   constexpr int solOrder{2};
@@ -181,5 +201,90 @@ int main(int argc, char *argv[])
   
   an.PostProcess(resolution);	
   return 0;
+}
+
+
+template<class TSHAPE>
+void FindHCurlDependency(int order)
+{
+    constexpr int NNodes = TSHAPE::NCornerNodes;
+    constexpr int NSides = TSHAPE::NSides;
+    constexpr int NConnects = NSides-NNodes;
+    constexpr int dim = TSHAPE::Dimension;
+    TPZVec<int64_t> nodeids(NNodes);
+    for(int i=0; i<NNodes; i++) nodeids[i] = i;
+    TPZVec<int> orders(NConnects,order);
+    TPZShapeData data;
+    TPZShapeHCurl<TSHAPE>::Initialize(nodeids, orders, data);
+    auto nshape = TPZShapeHCurl<TSHAPE>::NHCurlShapeF(data);
+    TPZFMatrix<REAL> phi(dim,nshape), curlphi(3,nshape);
+    if(dim == 2) curlphi.Resize(1, nshape);
+    TPZManVector<REAL,3> pt(dim,0.3);
+    TPZShapeHCurl<TSHAPE>::Shape(pt, data, phi, curlphi);
+    int lastconnectsize = TPZShapeHCurl<TSHAPE>::NConnectShapeF(NConnects-1, data);
+    int nH1space = TPZShapeHCurl<TSHAPE>::NH1ShapeF(data);
+    TPZManVector<std::set<int>,20 > shapetovec(nH1space);
+    for(auto it : data.fVecShapeIndex)
+    {
+        int shape = it.second;
+        int vec = it.first;
+        shapetovec[it.second].insert(it.first);
+    }
+    for (int ish=0; ish<nH1space; ish++) {
+        std::cout << "shape func " << ish << std::endl;
+        for (auto ivec : shapetovec[ish]) {
+            std::cout << "vec = " << ivec << " dir = ";
+            for(int i=0; i<dim; i++) std::cout << data.fMasterDirections(i,ivec) << " ";
+            std::cout << std::endl;
+        }
+    }
+    
+    typename TSHAPE::IntruleType intrule(2*order);
+    int npoints = intrule.NPoints();
+    TPZFMatrix<REAL> L2(lastconnectsize,lastconnectsize,0.),CC(lastconnectsize,lastconnectsize,0.),
+        CCR(lastconnectsize,lastconnectsize,0.);
+    std::set<int> remove;
+    if(ShapeRemove.find(orderpair(TSHAPE::Type(),order)) != ShapeRemove.end())
+    {
+        remove = ShapeRemove[orderpair(TSHAPE::Type(),order)];
+        CCR.Resize(lastconnectsize-remove.size(), lastconnectsize-remove.size());
+    }
+    REAL weight;
+    for (int ip = 0; ip<npoints; ip++) {
+        intrule.Point(ip,pt,weight);
+        TPZShapeHCurl<TSHAPE>::Shape(pt, data, phi, curlphi);
+        int icount = 0;
+        for (int ish=0; ish<lastconnectsize; ish++) {
+            int i = nshape-lastconnectsize+ish;
+            int inotremoved = true;
+            if(remove.find(ish) != remove.end()) inotremoved = false;
+            int jcount = 0;
+            for(int jsh=0; jsh<lastconnectsize; jsh++)
+            {
+                int jnotremoved = true;
+                if(remove.find(jsh) != remove.end()) jnotremoved = false;
+                int j = nshape-lastconnectsize+jsh;
+                for (int d=0; d<dim; d++) {
+                    L2(ish,jsh) += phi(d,i)*phi(d,j)*weight;
+                }
+                if(dim == 3)
+                {
+                    for (int d=0; d<3; d++) {
+                        CC(ish,jsh) += curlphi(d,i)*curlphi(d,j)*weight;
+                        if(inotremoved && jnotremoved) CCR(icount,jcount) += curlphi(d,i)*curlphi(d,j)*weight;
+                    }
+                } else{
+                    CC(ish,jsh) += curlphi(0,i)*curlphi(0,j)*weight;
+                    if(inotremoved && jnotremoved) CCR(icount,jcount) += curlphi(0,i)*curlphi(0,j)*weight;
+                }
+                if(jnotremoved) jcount++;
+            }
+            if(inotremoved) icount++;
+        }
+    }
+    std::ofstream out("CurlCheck.nb");
+    L2.Print("L2Mat = ",out,EMathematicaInput);
+    CC.Print("CurlCurlMat = ",out,EMathematicaInput);
+    CCR.Print("CurlSelectMat = ",out,EMathematicaInput);
 }
 
