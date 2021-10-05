@@ -21,6 +21,7 @@
 #include "pzshapetriang.h"
 #include "pzshapequad.h"
 #include "pzshapecube.h"
+#include "pzshapeprism.h"
 #include "TPZShapeData.h"
 #include "pzquad.h"
 
@@ -61,10 +62,12 @@ int main(int argc,char *argv[])
                                        148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,
                                        176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,
                                        204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239};                                    
+    ShapeRemove[orderpair(EPrisma,1)] = {};
     // FindHCurlDependency<pzshape::TPZShapeTriang>(5);
     // FindHCurlDependency<pzshape::TPZShapeTetra>(5);
     FindHCurlDependency<pzshape::TPZShapeQuad>(3);
     // FindHCurlDependency<pzshape::TPZShapeCube>(4);
+    // FindHCurlDependency<pzshape::TPZShapePrism>(1);
     return 0;
   /* We will project an analytic solution on a HCurl approximation space
    * in the domain Omega=[-1,1]x[-1,1] embedded in a 3D space*/
@@ -244,7 +247,8 @@ void FindHCurlDependency(int order)
     if(dim == 2) curlphi.Resize(1,nshape);
     TPZManVector<REAL,3> pt(dim,0.3);
     TPZShapeHCurl<TSHAPE>::Shape(pt,data,phi,curlphi);
-    int lastconnectsize = TPZShapeHCurl<TSHAPE>::NConnectShapeF(NConnects-1,data);
+    // int lastconnectsize = TPZShapeHCurl<TSHAPE>::NConnectShapeF(NConnects-1,data);
+    int lastconnectsize = TPZShapeHCurl<TSHAPE>::ComputeNConnectShapeF(NConnects-1,order);
     int nH1space = TPZShapeHCurl<TSHAPE>::NH1ShapeF(data);
     TPZManVector<std::set<int>,20 > shapetovec(nH1space);
     for(auto it : data.fVecShapeIndex)
