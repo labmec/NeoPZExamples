@@ -16,7 +16,7 @@
 #include <TPZSimpleTimer.h>
 #include <pzlog.h>
 
-#include "TPZShapeHCurl.h"
+#include "TPZShapeHDivKernel.h"
 #include "pzshapetetra.h"
 #include "pzshapetriang.h"
 #include "pzshapequad.h"
@@ -75,7 +75,7 @@ int main(int argc,char *argv[])
     FindHCurlDependency<pzshape::TPZShapeTetra>(3);
     // FindHCurlDependency<pzshape::TPZShapeQuad>(3);
     // FindHCurlDependency<pzshape::TPZShapeCube>(4);
-    // FindHCurlDependency<pzshape::TPZShapePrism>(1);
+    // FindHCurlDependency<pzshape::TPZShapePrism>(2);
     return 0;
   /* We will project an analytic solution on a HCurl approximation space
    * in the domain Omega=[-1,1]x[-1,1] embedded in a 3D space*/
@@ -249,15 +249,15 @@ void FindHCurlDependency(int order)
     for(int i=0; i<NNodes; i++) nodeids[i] = i;
     TPZVec<int> orders(NConnects,order);
     TPZShapeData data;
-    TPZShapeHCurl<TSHAPE>::Initialize(nodeids,orders,data);
-    auto nshape = TPZShapeHCurl<TSHAPE>::NHCurlShapeF(data);
+    TPZShapeHDivKernel<TSHAPE>::Initialize(nodeids,orders,data);
+    auto nshape = TPZShapeHDivKernel<TSHAPE>::NHCurlShapeF(data);
     TPZFMatrix<REAL> phi(dim,nshape),curlphi(3,nshape);
     if(dim == 2) curlphi.Resize(1,nshape);
     TPZManVector<REAL,3> pt(dim,0.3);
-    TPZShapeHCurl<TSHAPE>::Shape(pt,data,phi,curlphi);
-    // int lastconnectsize = TPZShapeHCurl<TSHAPE>::NConnectShapeF(NConnects-1,data);
-    int lastconnectsize = TPZShapeHCurl<TSHAPE>::ComputeNConnectShapeF(NConnects-1,order);
-    int nH1space = TPZShapeHCurl<TSHAPE>::NH1ShapeF(data);
+    TPZShapeHDivKernel<TSHAPE>::Shape(pt,data,phi,curlphi);
+    // int lastconnectsize = TPZShapeHDivKernel<TSHAPE>::NConnectShapeF(NConnects-1,data);
+    int lastconnectsize = TPZShapeHDivKernel<TSHAPE>::ComputeNConnectShapeF(NConnects-1,order);
+    int nH1space = TPZShapeHDivKernel<TSHAPE>::NH1ShapeF(data);
     TPZManVector<std::set<int>,20 > shapetovec(nH1space);
     for(auto it : data.fVecShapeIndex)
     {
@@ -287,7 +287,8 @@ void FindHCurlDependency(int order)
     REAL weight;
     for (int ip = 0; ip<npoints; ip++) {
         intrule.Point(ip,pt,weight);
-        TPZShapeHCurl<TSHAPE>::Shape(pt,data,phi,curlphi);
+        TPZShapeHDivKernel<TSHAPE>::Shape(pt,data,phi,curlphi);
+
         int icount = 0;
         for (int ish=0; ish<lastconnectsize; ish++) {
             int i = nshape-lastconnectsize+ish;
@@ -309,7 +310,7 @@ void FindHCurlDependency(int order)
                         if(inotremoved && jnotremoved) CCR(icount,jcount) += curlphi(d,i)*curlphi(d,j)*weight;
                     }
                 } else{
-                    CC(ish,jsh) += curlphi(0,i)*curlphi(0,j)*weight;
+                    CC(ish,jsh) += curlphi(0,ish)*curlphi(0,jsh)*weight;
                     if(inotremoved && jnotremoved) CCR(icount,jcount) += curlphi(0,i)*curlphi(0,j)*weight;
                 }
                 if(jnotremoved) jcount++;
