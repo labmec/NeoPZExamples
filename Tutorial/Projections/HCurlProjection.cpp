@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
   /* We will project an analytic solution on a HCurl approximation space
    * in the domain Omega=[-1,1]x[-1,1] embedded in a 3D space*/
   constexpr int solOrder{2};
-  auto exactSol = [](const TPZVec<REAL> &loc,
+  auto exactSol2D = [](const TPZVec<REAL> &loc,
                      TPZVec<STATE> &u,
                      TPZFMatrix<STATE> &curlU) {
     const auto &x = loc[0];
@@ -38,35 +38,69 @@ int main(int argc, char *argv[])
     // u[1] = (x - 1) * (x + 1);
     // curlU(0, 0) = 2 * x - 2 * y;
   };
+
+  auto exactSol3D = [](const TPZVec<REAL> &loc,
+                     TPZVec<STATE> &u,
+                     TPZFMatrix<STATE> &curlU) {
+    const auto &x = loc[0];
+    const auto &y = loc[1];
+    const auto &z = loc[2];
+    u[0] = sin(M_PI * z);
+    u[1] = sin(M_PI * x);
+    u[2] = sin(M_PI * y);
+    curlU(0, 0) = M_PI * cos(M_PI * x);
+    curlU(1, 0) = M_PI * cos(M_PI * x);
+    curlU(2, 0) = M_PI * cos(M_PI * x);
+    // u[0] = (y - 1) * (y + 1);
+    // u[1] = (x - 1) * (x + 1);
+    // curlU(0, 0) = 2 * x - 2 * y;
+  };
+  
   //for the rhs, the exact sol should be sol + curl of sol
-  const auto rhs = [exactSol](const TPZVec<REAL>&loc, TPZVec<STATE> &u){
+  const auto rhs2D = [exactSol2D](const TPZVec<REAL>&loc, TPZVec<STATE> &u){
       TPZFNMatrix<1,STATE> curlU(1,1);
-      exactSol(loc,u,curlU);
+      exactSol2D(loc,u,curlU);
       u[2]=curlU(0,0);
+  };
+  //for the rhs, the exact sol should be sol + curl of sol
+  const auto rhs3D = [exactSol3D](const TPZVec<REAL>&loc, TPZVec<STATE> &u){
+      TPZFNMatrix<3,STATE> curlU(3,1);
+      exactSol3D(loc,u,curlU);
+      u[3]=curlU(0,0);
+      u[4]=curlU(1,0);
+      u[5]=curlU(2,0);
   };
   
   //dimension of the problem
-  constexpr int dim{2};
+  constexpr int dim{3};
   //n divisions in x direction
-  constexpr int nDivX{32};
+  constexpr int nDivX{4};
   //n divisions in y direction
-  constexpr int nDivY{32};
-  
+  constexpr int nDivY{4};
+  //n divisions in z direction
+  constexpr int nDivZ{4};
   //TPZManVector<Type,N> is a vector container with static + dynamic storage. one can also use TPZVec<Type> for dynamic storage
-  TPZManVector<int,2> nDivs={nDivX,nDivY};
+  TPZManVector<int,3> nDivs;
+  if constexpr (dim == 2){
+    nDivs = {nDivX,nDivY};
+  }else{
+    nDivs = {nDivX,nDivY,nDivZ};
+  }
 
   //all geometric coordinates in NeoPZ are in the 3D space
 
   //lower left corner of the domain
-  TPZManVector<REAL,3> minX={-1,-1,0};
+  TPZManVector<REAL,3> minX(dim,-1);
   //upper right corner of the domain
-  TPZManVector<REAL,3> maxX={ 1, 1,0};
+  TPZManVector<REAL,3> maxX(dim, 1);
 
   /*vector for storing materials(regions) identifiers
    * for the TPZGeoMeshTools::CreateGeoMeshOnGrid function.
    * In this example, we have different materials in each
    * section of the boundary*/
-  TPZManVector<int,5> matIdVec={1,-1,-2,-3,-4};
+  constexpr int nbcs = 2*dim;
+  TPZManVector<int,nbcs+1> matIdVec(2*dim+1,1);
+  for(int i = 1; i <= nbcs; i++) {matIdVec[i] = -i;}
   //whether to create boundary elements
   constexpr bool genBoundEls{true};
 
@@ -76,12 +110,12 @@ int main(int argc, char *argv[])
    * val2 is used.
    By default, dirichlet = 0 is imposed in all boundaries
   */
-  TPZManVector<TPZFMatrix<STATE>,4> val1(4,TPZFMatrix<STATE>(1, 1, 0.));
-  TPZManVector<TPZManVector<STATE, 1>,4> val2 = {{0},{0},{0},{0}};
+  TPZManVector<TPZFMatrix<STATE>,nbcs> val1(nbcs,TPZFMatrix<STATE>(1, 1, 0.));
+  TPZManVector<TPZManVector<STATE, 1>,nbcs> val2(nbcs,TPZVec<STATE>(1,0));
   // dirichlet=0,neumann=1,robin=2
-  TPZManVector<int,4> boundType = {0,0,0,0};
+  TPZManVector<int,6> boundType(6,0);
   //type of elements
-  constexpr MMeshType meshType{MMeshType::ETriangular};
+  constexpr MMeshType meshType = dim == 3 ? MMeshType::ETetrahedral : MMeshType::ETriangular;
 
   //defining the geometry of the problem
   //TPZAutoPointer is a smart pointer from the NeoPZ library
@@ -101,11 +135,15 @@ int main(int argc, char *argv[])
 
   auto *mat = new TPZHCurlProjection<STATE>(matIdVec[0],dim);
 
-  mat->SetForcingFunction(rhs,solOrder);
+  if constexpr (dim == 2){
+    mat->SetForcingFunction(rhs2D,solOrder);
+  }else{
+    mat->SetForcingFunction(rhs3D,solOrder);
+  }
   cmesh->InsertMaterialObject(mat);
 
   //now we insert the boundary conditions
-  for(auto i = 0; i < 4; i++)
+  for(auto i = 0; i < nbcs; i++)
     {
       //TPZBndCond is a material type for boundary conditions
       TPZBndCond * bnd = mat->CreateBC(mat,matIdVec[i+1],boundType[i],val1[i],val2[i]);
@@ -119,10 +157,10 @@ int main(int argc, char *argv[])
 
   /*The TPZLinearAnalysis class manages the creation of the algebric
   * problem and the matrix inversion*/
-  TPZLinearAnalysis an(cmesh);
+  TPZLinearAnalysis an(cmesh,false);
 
   //sets number of threads to be used by the solver
-  constexpr int nThreads{8};
+  constexpr int nThreads{0};
   //defines storage scheme to be used for the FEM matrices
   //in this case, a symmetric sparse matrix is used if NeoPZ
   // was configured with MKL, otherwise, a sym. skyline matrix is used
@@ -155,7 +193,12 @@ int main(int argc, char *argv[])
     TPZSimpleTimer err("Calc error");
     // let us set the exact solution and suggest an integration rule
     // for calculating the error
-    an.SetExact(exactSol, solOrder);
+    if constexpr (dim == 3){
+      an.SetExact(exactSol3D, solOrder);
+    }else{
+      an.SetExact(exactSol2D, solOrder);
+    }
+    
 
     /// Calculating approximation error
     
@@ -170,16 +213,30 @@ int main(int argc, char *argv[])
             << "HCurl Seminorm = " << error[2] << "\n\n";
             
   ///vtk export
-  TPZVec<std::string> scalarVars(1), vectorVars(1);
-  vectorVars[0] = "Solution";
-  scalarVars[0] = "Curl";
-  an.DefineGraphMesh(2,scalarVars,vectorVars,"hcurlProjection.vtk");
-  constexpr int resolution{1};
+  TPZVec<std::string> scalarVars, vectorVars;
+
+  /* for 3D problems, one can also post process
+   only on the surface by setting postprocessdim == 2*/
+  constexpr int postprocessdim{dim};
+  if constexpr (postprocessdim == 3){
+    vectorVars.Resize(2);
+    vectorVars[0] = "Solution";
+    vectorVars[1] = "Curl";
+  }else{
+    vectorVars.Resize(1);
+    scalarVars.Resize(1);
+    vectorVars[0] = "Solution";
+    scalarVars[0] = "Curl";
+  }
+  
+  an.DefineGraphMesh(postprocessdim,scalarVars,vectorVars,"hcurlProjection.vtk");
+  constexpr int resolution{2};
 
   std::cout << "Post processing..."<<std::endl;
   TPZSimpleTimer post("Post-processing");
   
-  an.PostProcess(resolution);	
+  an.PostProcess(resolution);
+  
   return 0;
 }
 
