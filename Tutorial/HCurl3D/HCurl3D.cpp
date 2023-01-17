@@ -4,8 +4,7 @@
 */
 #include <pzgmesh.h> //for TPZGeoMesh
 #include <pzcmesh.h> //for TPZCompMesh
-#include <TPZGeoMeshTools.h> //for TPZGeoMeshTools::CreateGeoMeshOnGrid
-#include <MMeshType.h> //for MMeshType
+#include <TPZGmshReader.h>
 #include <pzmanvector.h>//for TPZManVector
 #include <TPZBndCond.h> //for TPZBndCond
 #include <TPZLinearAnalysis.h> //for TPZLinearAnalysis
@@ -44,26 +43,6 @@ int main(int argc, char *argv[])
   
    //dimension of the problem
    constexpr int dim{3};
-   //n divisions in x direction
-   constexpr int nDivX{8};
-   //n divisions in y direction
-   constexpr int nDivY{8};
-   //n divisions in z direction
-   constexpr int nDivZ{8};
-  
-   //TPZManVector<Type,N> is a vector container with static + dynamic storage. one can also use TPZVec<Type> for dynamic storage
-   TPZManVector<int,2> nDivs={nDivX,nDivY,nDivZ};
-
-   //all geometric coordinates in NeoPZ are in the 3D space
-
-   //lower left corner of the domain
-   TPZManVector<REAL,3> minX={-1,-1,-1};
-   //upper right corner of the domain
-   TPZManVector<REAL,3> maxX={ 1, 1, 1};
-
-   /*vector for storing materials(regions) identifiers
-    * for the TPZGeoMeshTools::CreateGeoMeshOnGrid function.*/
-   TPZManVector<int,5> matIdVec={1,-1,-1,-1,-1,-1,-1};
    //whether to create boundary elements
    constexpr bool genBoundEls{true};
 
@@ -78,13 +57,33 @@ int main(int argc, char *argv[])
    // dirichlet=0,neumann=1,robin=2
    constexpr int boundType = {0};
    //type of elements
-   constexpr MMeshType meshType{MMeshType::ETetrahedral};
 
-   //defining the geometry of the problem
+   //the geometry/mesh of this problem is defined by a .msh mesh
+   const std::string filename{"hcurlmesh.msh"};
+   /*this structure will give us information about the materials read by GmshReader
+     position i will give us all the physical entities of dimension i as a map
+     having as keys the name of the region and as values their identifier
+    */
+   TPZVec<std::map<std::string,int>> mat_info;
    //TPZAutoPointer is a smart pointer from the NeoPZ library
-   TPZAutoPointer<TPZGeoMesh> gmesh =
-     TPZGeoMeshTools::CreateGeoMeshOnGrid(dim,minX,maxX,matIdVec,
-                                          nDivs,meshType,genBoundEls);
+   TPZAutoPointer<TPZGeoMesh> gmesh = [&filename, &mat_info] (){
+     TPZGmshReader meshReader;
+     auto gmesh = meshReader.GeometricGmshMesh(filename);
+     
+     mat_info = meshReader.GetDimNamePhysical();
+     const auto dim = meshReader.Dimension();
+     for(int i = 0; i <= dim; i++){
+       std::cout<<"materials with dim "<<i<<std::endl;
+       for(auto &mat : mat_info[i]){
+         std::cout<<"\t name: "<<mat.first <<" id: "<<mat.second<<std::endl;
+       }
+     }
+     return gmesh;
+   }();
+
+   const int volid = mat_info[3]["vol"];
+   const int bndid = mat_info[2]["bnd"];
+   
    ///Defines the computational mesh based on the geometric mesh
    TPZAutoPointer<TPZCompMesh>  cmesh = new TPZCompMesh(gmesh);
 
@@ -98,14 +97,14 @@ int main(int argc, char *argv[])
     * material ids used when creating the geometric mesh. In this way, you could
     * have different materials on different mesh regions */
 
-   auto *mat = new TPZMatHCurl3D(matIdVec[0],coeff);
+   auto *mat = new TPZMatHCurl3D(volid,coeff);
 
    mat->SetForcingFunction(rhs,rhsOrder);
    cmesh->InsertMaterialObject(mat);
 
    //now we insert the boundary condition
    //TPZBndCond is a material type for boundary conditions
-   TPZBndCond * bnd = mat->CreateBC(mat,matIdVec[1],boundType,val1, val2);
+   TPZBndCond * bnd = mat->CreateBC(mat,bndid,boundType,val1, val2);
    cmesh->InsertMaterialObject(bnd);
    
    //seting the polynomial order in the computational mesh
