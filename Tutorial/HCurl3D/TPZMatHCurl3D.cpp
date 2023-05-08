@@ -153,5 +153,59 @@ void TPZMatHCurl3D<TVar>::Solution(const TPZMaterialDataT<TVar> &data,
   }
 }
 
+template<class TVar>
+void TPZMatHCurl3D<TVar>::GetSolDimensions(uint64_t &u_len,
+                                           uint64_t &du_row,
+                                           uint64_t &du_col) const
+{
+  u_len = 3;
+  du_row = 3;
+  du_col = 1;
+}
+
+template<class TVar>
+void TPZMatHCurl3D<TVar>::Errors(const TPZMaterialDataT<TVar>&data,
+              TPZVec<REAL> &values)
+{
+  const auto &x = data.x;
+  const auto &u = data.sol[0];
+  const auto &curlu = data.curlsol[0];
+
+#ifdef PZDEBUG
+  if(!this->HasExactSol()){
+    PZError<<__PRETTY_FUNCTION__;
+    PZError<<"\nThe material has no associated exact solution. Aborting...\n";
+    DebugStop();
+  }
+#endif
+
+  TPZManVector<TVar,3> u_exact={0.,0.,0.};
+  TPZFNMatrix<3,TVar> curlu_exact(3,1,0.);
+  this->ExactSol()(x,u_exact,curlu_exact);
+  values.Resize(this->NEvalErrors());
+  values.Fill(0.0);
+    
+  //values[0] : error in Hcurl norm
+  //values[1] : error in L2 norm
+  //values[2] : error in Hcurl semi-norm
+
+  values[1] = 0.;
+  values[2] = 0.;
+
+  TVar diff_curl{0}, diff_u{0};
+  for(auto id=0; id<this->Dimension(); id++) {
+    diff_curl = curlu[id] - curlu_exact(id,0);
+    diff_u = u[id] - u_exact[id];
+    if constexpr(is_complex<TVar>::value){
+      values[1]  += std::real(diff_u*std::conj(diff_u));
+      values[2]  += std::real(diff_curl*std::conj(diff_curl));
+    }else{
+      values[1]  += diff_u*diff_u;
+      values[2]  += diff_curl*diff_curl;
+    }
+  }
+  values[0]  = values[1]+values[2];
+}
+
 template class TPZMatHCurl3D<STATE>;
 template class TPZMatHCurl3D<CSTATE>;

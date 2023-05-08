@@ -66,6 +66,22 @@ int main(int argc, char *argv[])
      f[2] = -2.*(a_coeff*y2mone + a_coeff*x2mone + 0.5*c_coeff * y2mone * x2mone);
    };
 
+
+   constexpr auto sol_order{4};
+   const auto exact_sol = [a_coeff, c_coeff](const TPZVec<REAL>&loc, TPZVec<STATE> &u, TPZFMatrix<STATE> &curl_u){
+     const auto &x = loc[0];
+     const auto &y = loc[1];
+     const auto &z = loc[2];
+     const STATE x2mone = x*x-1;
+     const STATE y2mone = y*y-1;
+     const STATE z2mone = z*z-1;
+     u[0] = z2mone*y2mone;
+     u[1] = x2mone*z2mone;
+     u[2] = y2mone*x2mone;
+
+     curl_u(0,0) = 2*(y-z)*x2mone;
+     curl_u(1,0) = 2*(z-x)*y2mone;
+     curl_u(2,0) = 2*(x-y)*z2mone;
    };
 
   #endif
@@ -207,6 +223,25 @@ int main(int argc, char *argv[])
        an.Solve();
      }
    }
+
+
+   //compute error
+
+   //let us set the exact solution and suggest an integration rule
+   //for calculating the error
+   an.SetExact(exact_sol,sol_order);
+  
+   ///Calculating approximation error  
+   TPZManVector<REAL,3> error;
+   std::ofstream anPostProcessFile("postprocess.txt");
+
+   an.SetThreadsForError(nThreads);
+   an.PostProcessError(error,false,anPostProcessFile);
+	
+   std::cout << "\nApproximation error:\n";
+   std::cout << "HCurl Norm = " << error[0]<<'\n';
+   std::cout << "L2 Norm = " << error[1]<<'\n'; 
+   std::cout << "HCurl Seminorm = " << error[2] << "\n\n";
    
    ///vtk export
    std::cout << "Post processing..."<<std::endl;

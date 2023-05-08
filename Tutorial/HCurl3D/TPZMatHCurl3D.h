@@ -9,6 +9,7 @@
 
 #include "TPZMatBase.h"
 #include "TPZMatSingleSpace.h"
+#include "TPZMatErrorSingleSpace.h"
 /**
  * @ingroup material
  * @brief This class implements the weak statement for a simple problem
@@ -17,10 +18,12 @@
 template<class TVar>
 class  TPZMatHCurl3D  :
   public TPZMatBase<TVar,
-                    TPZMatSingleSpaceT<TVar>>
+                    TPZMatSingleSpaceT<TVar>,
+                    TPZMatErrorSingleSpace<TVar>>
 {
   using TBase = TPZMatBase<TVar,
-                           TPZMatSingleSpaceT<TVar>>;
+                           TPZMatSingleSpaceT<TVar>,
+                           TPZMatErrorSingleSpace<TVar>>;
 public:
   /**
      @brief Constructor taking a few material parameters
@@ -50,6 +53,12 @@ public:
   //! Computes the solution at an integration point
   void Solution(const TPZMaterialDataT<TVar> &data,
                 int var, TPZVec<TVar> &solout) override;
+  void GetSolDimensions(uint64_t &u_len,
+                        uint64_t &du_row,
+                        uint64_t &du_col) const override;
+
+  void Errors(const TPZMaterialDataT<TVar>&data,
+              TPZVec<REAL> &errors) override;
   /**@}*/
   
   /**
