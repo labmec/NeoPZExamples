@@ -12,19 +12,23 @@
 /**
  * @ingroup material
  * @brief This class implements the weak statement for a simple problem
- curl curl u - c u = for illustrating usage of HCurl elements
+ curl (a curl u) - c u = f for illustrating usage of HCurl elements
 */
+template<class TVar>
 class  TPZMatHCurl3D  :
-  public TPZMatBase<STATE,TPZMatSingleSpaceT<STATE>>
+  public TPZMatBase<TVar,
+                    TPZMatSingleSpaceT<TVar>>
 {
-  using TBase = TPZMatBase<STATE,TPZMatSingleSpaceT<STATE>>;
+  using TBase = TPZMatBase<TVar,
+                           TPZMatSingleSpaceT<TVar>>;
 public:
   /**
      @brief Constructor taking a few material parameters
      @param[in] id Material identifier.
+     @param[in] a Coefficient of the curl term
      @param[in] c Coefficient of the mass term
   */
-  TPZMatHCurl3D(int id, const STATE c);
+  TPZMatHCurl3D(int id, const TVar a, const TVar c);
   
   TPZMatHCurl3D * NewMaterial() const override;
     
@@ -44,8 +48,8 @@ public:
   //! Number of variables associated with a given solution
   int NSolutionVariables(int var) const override;
   //! Computes the solution at an integration point
-  void Solution(const TPZMaterialDataT<STATE> &data,
-                int var, TPZVec<STATE> &solout) override;
+  void Solution(const TPZMaterialDataT<TVar> &data,
+                int var, TPZVec<TVar> &solout) override;
   /**@}*/
   
   /**
@@ -53,31 +57,37 @@ public:
      @{
   */
   //! Sets the coefficient of the mass termwavelength being analysed
-  void SetCoeff(STATE c) {fC = c;}
+  void SetMassCoeff(const TVar c) {fC = c;}
   //! Gets the current wavelength
-  [[nodiscard]] inline STATE GetCoeff() const{ return fC;}
+  [[nodiscard]] inline TVar GetMassCoeff() const{ return fC;}
+  //! Sets the coefficient of the mass termwavelength being analysed
+  void SetCurlCoeff(const TVar a) {fA = a;}
+  //! Gets the current wavelength
+  [[nodiscard]] inline TVar GetCurlCoeff() const{ return fA;}
   /**@}*/
   
   /**
      @name ContributeMethods
      @{
   */
-  void Contribute(const TPZMaterialDataT<STATE> &data, REAL weight,
-                  TPZFMatrix<STATE> &ek, TPZFMatrix<STATE> &ef) override;
+  void Contribute(const TPZMaterialDataT<TVar> &data, REAL weight,
+                  TPZFMatrix<TVar> &ek, TPZFMatrix<TVar> &ef) override;
 
-  void Contribute(const TPZMaterialDataT<STATE> &data, REAL weight,
-                  TPZFMatrix<STATE> &ef) override {}//nothing to be done
+  void Contribute(const TPZMaterialDataT<TVar> &data, REAL weight,
+                  TPZFMatrix<TVar> &ef) override {}//nothing to be done
   
-  void ContributeBC(const TPZMaterialDataT<STATE> &data, REAL weight,
-                    TPZFMatrix<STATE> &ek, TPZFMatrix<STATE> &ef,
-                    TPZBndCondT<STATE> &bc) override;
+  void ContributeBC(const TPZMaterialDataT<TVar> &data, REAL weight,
+                    TPZFMatrix<TVar> &ek, TPZFMatrix<TVar> &ef,
+                    TPZBndCondT<TVar> &bc) override;
   /**@}*/
 
   [[nodiscard]] int ClassId() const override;
 protected:
   TPZMatHCurl3D() = default;
+  //! Coefficient of the curl term
+  TVar fA{1.};
   //! Coefficient of the mass term
-  STATE fC{1.};
+  TVar fC{1.};
 };
 
 #endif

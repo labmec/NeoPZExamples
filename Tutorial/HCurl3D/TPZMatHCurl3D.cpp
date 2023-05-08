@@ -2,59 +2,73 @@
 #include "TPZMaterialDataT.h"
 #include <pzaxestools.h>
 
-TPZMatHCurl3D::TPZMatHCurl3D(int id, const STATE c) : TBase(id), fC(c) {}
 
-TPZMatHCurl3D * TPZMatHCurl3D::NewMaterial() const
+template<class TVar>
+TPZMatHCurl3D<TVar>::TPZMatHCurl3D(int id, const TVar a, const TVar c) :
+  TBase(id), fA(a), fC(c) {}
+
+template<class TVar>
+TPZMatHCurl3D<TVar> * TPZMatHCurl3D<TVar>::NewMaterial() const
 {
   return new TPZMatHCurl3D(*this);
 }
 
 
-
-void TPZMatHCurl3D::Contribute(const TPZMaterialDataT<STATE> &data,
+template<class TVar>
+void TPZMatHCurl3D<TVar>::Contribute(const TPZMaterialDataT<TVar> &data,
                                REAL weight,
-                               TPZFMatrix<STATE> &ek,
-                               TPZFMatrix<STATE> &ef)
+                               TPZFMatrix<TVar> &ek,
+                               TPZFMatrix<TVar> &ef)
 {
   
   const int nshape = data.phi.Rows();
-  const auto &phi = data.phi;
-  const auto &curl_phi = data.curlphi;
+  
   //evaluates rhs
   constexpr int dim{3};
-  TPZManVector<STATE,3> force(dim,0.); 
+  TPZManVector<TVar,3> force(dim,0.); 
   if(this->HasForcingFunction()){
     this->fForcingFunction(data.x,force);
   }
-  TPZFNMatrix<9,STATE> coeff_mat(3,3,0.), rhs_mat(3,1,0.);
+  TPZFNMatrix<9,TVar> a_mat(3,3,0.), c_mat(3,3,0.), rhs_mat(3,1,0.);
   for(int x = 0; x < 3; x++){
-    coeff_mat(x,x) = fC;
+    a_mat(x,x) = fA;
+    c_mat(x,x) = fC;
     rhs_mat(x,0) = force[x];
   }
 
+  TPZFNMatrix<200,TVar> phi(nshape,3,0.), curl_phi(3,nshape,0.);
+  for(int i = 0; i < nshape; i++){
+    for(int x = 0; x < 3; x++){
+      phi(i,x) = data.phi.GetVal(i,x);
+      curl_phi(x,i) = data.curlphi.GetVal(x,i);
+    }
+  }
+
+  
   //initializing with correct dimensions
-  TPZFNMatrix<3000,STATE> phi_t(3,nshape);
-  TPZFNMatrix<3000,STATE> curl_phi_t(nshape,3);
+  TPZFNMatrix<3000,TVar> phi_t(3,nshape);
+  TPZFNMatrix<3000,TVar> curl_phi_t(nshape,3);
 
   phi.Transpose(&phi_t);
   curl_phi.Transpose(&curl_phi_t);
     
-  ek += ((curl_phi_t * curl_phi) -  phi*(coeff_mat*phi_t))*weight;
+  ek += ((curl_phi_t * (a_mat * curl_phi)) -  phi*(c_mat*phi_t))*weight;
 
   ef += phi*rhs_mat*weight;
 }
 
-void TPZMatHCurl3D::ContributeBC(const TPZMaterialDataT<STATE> &data,
-                                         REAL weight,
-                                         TPZFMatrix<STATE> &ek,
-                                         TPZFMatrix<STATE> &ef,
-                                         TPZBndCondT<STATE> &bc)
+template<class TVar>
+void TPZMatHCurl3D<TVar>::ContributeBC(const TPZMaterialDataT<TVar> &data,
+                                       REAL weight,
+                                       TPZFMatrix<TVar> &ek,
+                                       TPZFMatrix<TVar> &ef,
+                                       TPZBndCondT<TVar> &bc)
 {
   const auto &phi = data.phi;
   const auto& BIG = TPZMaterial::fBigNumber;
     
-  const STATE v1 = bc.Val1()(0,0);
-  const STATE v2 = bc.Val2()[0];
+  const TVar v1 = bc.Val1()(0,0);
+  const TVar v2 = bc.Val2()[0];
   constexpr STATE tol = std::numeric_limits<STATE>::epsilon();
   if(std::abs(v2) > tol){
     PZError<<__PRETTY_FUNCTION__;
@@ -67,13 +81,13 @@ void TPZMatHCurl3D::ContributeBC(const TPZMaterialDataT<STATE> &data,
     case 0:{
       const int nshape=phi.Rows();
       for(int i = 0 ; i<nshape ; i++){
-        STATE load{0};
+        TVar load{0};
         for(int x = 0; x < 3; x++){
           load += weight * BIG * v2 * phi(i,x);
         }
         ef(i,0) += load;
         for(int j=0;j<nshape;j++){
-          STATE stiff{0};
+          TVar stiff{0};
           for(int x = 0; x < 3; x++){
             stiff += phi(i,x) * phi(j,x) * BIG ;
           }
@@ -94,22 +108,24 @@ void TPZMatHCurl3D::ContributeBC(const TPZMaterialDataT<STATE> &data,
     }
 }
 
-int TPZMatHCurl3D::ClassId() const {
+template<class TVar>
+int TPZMatHCurl3D<TVar>::ClassId() const {
   return Hash("TPZMatHCurl3D") ^
     TBase::ClassId() << 1;
 
 
 }
 
-//! Variable index of a given solution
-int TPZMatHCurl3D::VariableIndex(const std::string &name) const
+template<class TVar>
+int TPZMatHCurl3D<TVar>::VariableIndex(const std::string &name) const
 {
   if( strcmp(name.c_str(), "u") == 0) return 0;
   if( strcmp(name.c_str(), "curl_u") == 0) return 1;
   return TPZMaterial::VariableIndex(name);
 }
-//! Number of variables associated with a given solution
-int TPZMatHCurl3D::NSolutionVariables(int var) const
+
+template<class TVar>
+int TPZMatHCurl3D<TVar>::NSolutionVariables(int var) const
 {
   switch(var){
   case 0: //field (real part)
@@ -119,9 +135,10 @@ int TPZMatHCurl3D::NSolutionVariables(int var) const
     return TPZMaterial::NSolutionVariables(var);
   }
 }
-//! Computes the solution at an integration point
-void TPZMatHCurl3D::Solution(const TPZMaterialDataT<STATE> &data,
-              int var, TPZVec<STATE> &solout)
+
+template<class TVar>
+void TPZMatHCurl3D<TVar>::Solution(const TPZMaterialDataT<TVar> &data,
+              int var, TPZVec<TVar> &solout)
 {
 
   const auto &sol = data.sol[0];
@@ -135,3 +152,6 @@ void TPZMatHCurl3D::Solution(const TPZMaterialDataT<STATE> &data,
     break;
   }
 }
+
+template class TPZMatHCurl3D<STATE>;
+template class TPZMatHCurl3D<CSTATE>;

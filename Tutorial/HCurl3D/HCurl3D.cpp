@@ -32,11 +32,13 @@ int main(int argc, char *argv[])
    TPZLogger::InitializePZLOG();
 #endif
 
+   constexpr bool is_complex{false};
+
+#ifdef DEBUG_POISSON
    //coefficient of the mass term of the equation
    constexpr STATE coeff{1};
 
    //max polynomial order of the rhs
-#ifdef DEBUG_POISSON
    constexpr auto rhsOrder{6};
    const auto rhs = [](const TPZVec<REAL>&loc, TPZVec<STATE> &u){
      const auto &x = loc[0];
@@ -48,18 +50,24 @@ int main(int argc, char *argv[])
      u[0] = M_PI*M_PI*sinx*siny*sinz;
    };
 #else
-   constexpr auto rhsOrder{6};
-   const auto rhs = [](const TPZVec<REAL>&loc, TPZVec<STATE> &u){
+   constexpr auto rhsOrder{4};
+   constexpr STATE a_coeff{1};
+   constexpr STATE c_coeff{1};
+   
+   const auto rhs = [a_coeff, c_coeff](const TPZVec<REAL>&loc, TPZVec<STATE> &f){
      const auto &x = loc[0];
      const auto &y = loc[1];
      const auto &z = loc[2];
-     const auto onemx2 = 1-x*x;
-     const auto onemy2 = 1-y*y;
-     const auto onemz2 = 1-z*z;
-     u[0] = x*y*onemy2*onemz2+2*x*y*onemz2;
-     u[1] = y*y*onemx2*onemz2 + onemy2*(2-x*x-z*z);
-     u[2] = y*z*onemx2*onemy2 + 2*y*z*onemx2;
+     const STATE x2mone = x*x-1;
+     const STATE y2mone = y*y-1;
+     const STATE z2mone = z*z-1;
+     f[0] = -2.*(a_coeff*z2mone + a_coeff*y2mone + 0.5*c_coeff * z2mone * y2mone);
+     f[1] = -2.*(a_coeff*x2mone + a_coeff*z2mone + 0.5*c_coeff * x2mone * z2mone);
+     f[2] = -2.*(a_coeff*y2mone + a_coeff*x2mone + 0.5*c_coeff * y2mone * x2mone);
    };
+
+   };
+
   #endif
    //dimension of the problem
    constexpr int dim{3};
@@ -105,10 +113,10 @@ int main(int argc, char *argv[])
    const int bndid = mat_info[2]["bnd"];
    
    ///Defines the computational mesh based on the geometric mesh
-   TPZAutoPointer<TPZCompMesh>  cmesh = new TPZCompMesh(gmesh);
+   TPZAutoPointer<TPZCompMesh>  cmesh = new TPZCompMesh(gmesh,is_complex);
 
    //polynomial order used in the approximatoin
-   constexpr int pOrder{3};
+   constexpr int pOrder{0};
    //using HCurl-conforming elements
 #ifdef DEBUG_POISSON
    cmesh->SetAllCreateFunctionsContinuous();
@@ -122,7 +130,7 @@ int main(int argc, char *argv[])
 #ifdef DEBUG_POISSON
    auto *mat = new TPZMatPoisson<>(volid, dim);
 #else
-   auto *mat = new TPZMatHCurl3D(volid,coeff);
+   auto *mat = new TPZMatHCurl3D<STATE>(volid,a_coeff, c_coeff);
 #endif
    mat->SetForcingFunction(rhs,rhsOrder);
    cmesh->InsertMaterialObject(mat);
@@ -168,8 +176,7 @@ int main(int argc, char *argv[])
    TPZStepSolver<STATE> solver;
    solver.SetDirect(ELDLt);
    an.SetSolver(solver);
-       
-   TPZManVector<REAL, 3> error;
+   
    {
      TPZSimpleTimer total("Total");
      {
@@ -179,14 +186,16 @@ int main(int argc, char *argv[])
      }
      {
        TPZSimpleTimer solve("Solve", true);
-       // an.Solve();
 
-       Precond::Type precond_type = Precond::NodeCentered;
+       auto *solver = dynamic_cast<TPZStepSolver<STATE> *>(an.Solver());
+       solver->Matrix()->SetSymmetry(SymProp::Sym);
+
+       Precond::Type precond_type = Precond::Element;
        constexpr bool overlap {false};
        TPZAutoPointer<TPZMatrixSolver<STATE>> precond =
          an.BuildPreconditioner<STATE>(precond_type, overlap);
 
-       auto *solver = dynamic_cast<TPZStepSolver<STATE> *>(an.Solver());
+       
        
 
        const int64_t n_iter = {500};
@@ -198,7 +207,7 @@ int main(int argc, char *argv[])
        an.Solve();
      }
    }
-            
+   
    ///vtk export
    std::cout << "Post processing..."<<std::endl;
    TPZSimpleTimer tpostprocess("Post processing");
