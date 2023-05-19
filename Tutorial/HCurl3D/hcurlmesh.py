@@ -13,7 +13,7 @@ vol_tag = 1
 # boundary identifier
 bnd_tag = 2
 # element size
-el_size = 0.3
+el_size = 0.5
 # x, y, z, dx, dy, dz
 gmsh.model.occ.addBox(-1, -1, -1, 2, 2, 2, vol_tag)
 gmsh.model.occ.synchronize()

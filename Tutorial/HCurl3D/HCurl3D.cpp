@@ -31,9 +31,9 @@ int main(int argc, char *argv[])
 
   /*
     Phil,
-    there are 1567 volumetric elements in this mesh.
-    setting reorder_eqs to false will result in 1602 blocks and 55 colors
-    setting reorder_eqs to true will result in 1567 blocks divided into 45 colors.
+    there are 386 volumetric elements in this mesh.
+    setting reorder_eqs to false will result in 397 blocks and 48 colors
+    setting reorder_eqs to true will result in 386 blocks divided into 39 colors.
 
     Moreover: values of a and c highly influence the initial residual of GMRES algorithm,
     you can change them using the variables a_coeff and c_coeff.
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
 #else
    constexpr auto rhsOrder{4};
    constexpr TVar a_coeff{1};
-   constexpr TVar c_coeff{1};
+   constexpr TVar c_coeff{100};
    
    const auto rhs = [a_coeff, c_coeff](const TPZVec<REAL>&loc, TPZVec<TVar> &f){
      const auto &x = loc[0];
@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
    //polynomial order used in the approximatoin
    constexpr int pOrder{0};
    //whether to reorder equations
-   constexpr bool reorder_eqs{true};
+   constexpr bool reorder_eqs{false};
    //using HCurl-conforming elements
 #ifdef DEBUG_POISSON
    cmesh->SetAllCreateFunctionsContinuous();
